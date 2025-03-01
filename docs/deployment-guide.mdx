@@ -1,0 +1,271 @@
+# Content Pipeline Deployment Guide
+
+This guide walks you through deploying the complete Modal-based content generation pipeline and integrating it with n8n workflows.
+
+## System Architecture
+
+The content pipeline consists of the following components:
+
+1. **Core Infrastructure**: Shared code, volumes, and utilities
+2. **Web Scraper**: Content extraction from websites
+3. **Content Processor**: Text analysis and embedding generation
+4. **Media Processor**: YouTube downloading and transcription
+5. **Image Generator**: AI image generation from text or images
+6. **API Service**: Unified API for job management and orchestration
+7. **n8n Integration**: Workflow automation connecting with all components
+
+## Prerequisites
+
+- Modal CLI and account
+- Python 3.11+
+- n8n instance (for workflow automation)
+- GPU access on Modal (A10G or better recommended)
+
+## Step 1: Set Up Your Environment
+
+1. Install Modal CLI:
+   ```bash
+   pip install modal
+   ```
+
+2. **Log** in to Modal:
+   ```bash
+   modal token new
+   ```
+
+3. Create a project directory:
+   ```bash
+   mkdir content-pipeline
+   cd content-pipeline
+   ```
+
+4. Clone the repository or download the source files:
+   ```bash
+   git clone https://github.com/your-repo/content-pipeline.git .
+   ```
+
+## Step 2: Create Modal Volumes
+
+Create the necessary Modal volumes for persistent storage:
+
+```bash
+modal volume create content-raw
+modal volume create content-processed
+modal volume create model-cache
+modal volume create media-cache
+```
+
+## Step 3: Deploy the Components
+
+Deploy all components to Modal:
+
+```bash
+modal deploy modal_core.py  content_processor.py media_processor.py image_generator.py api_service.py
+```
+
+This will deploy:
+- The core infrastructure
+- All processing services
+- The unified API service
+- All scheduled jobs
+
+## Step 4: Test the Deployment
+
+1. Test the API service health check:
+   ```bash
+   curl https://your-workspace--content-pipeline-api-service.modal.run/health
+   ```
+
+2. Create an API key:
+   ```bash
+   curl -X POST \
+     https://your-workspace--content-pipeline-api-service.modal.run/api-keys \
+     -H "Content-Type: application/json" \
+     -d '{
+       "api_key": "your-api-key",
+       "name": "test-key",
+       "email": "your-email@example.com",
+       "created_at": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"
+     }'
+   ```
+
+3. Test a simple web scraping job:
+   ```bash
+   curl -X POST \
+     https://your-workspace--content-pipeline-api-service.modal.run/jobs \
+     -H "Content-Type: application/json" \
+     -H "X-API-Key: your-api-key" \
+     -d '{
+       "job_type": "web_scraping",
+       "parameters": {
+         "targets": [
+           {
+             "url": "https://example.com",
+             "selectors": {
+               "title": "h1",
+               "content": "p"
+             }
+           }
+         ]
+       }
+     }'
+   ```
+
+4. Check job status:
+   ```bash
+   curl -H "X-API-Key: your-api-key" \
+     https://your-workspace--content-pipeline-api-service.modal.run/jobs/{job_id}
+   ```
+
+## Step 5: Set Up n8n Integration
+
+1. Launch your n8n instance:
+   ```bash
+   n8n start
+   ```
+
+2. Create a new workflow in n8n
+3. Add HTTP Request nodes to connect to Modal endpoints
+4. Configure authentication with your API key
+5. Set up workflow logic and automation
+6. Test and activate the workflow
+
+Refer to the [n8n Integration Guide](n8n_integration_guide.md) for detailed instructions on setting up n8n workflows.
+
+## API Reference
+
+### Main API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Health check |
+| `/api-keys` | POST | Create API key |
+| `/api-keys` | GET | List API keys |
+| `/api-keys/{api_key}` | DELETE | Delete API key |
+| `/jobs` | POST | Create job |
+| `/jobs/{job_id}` | GET | Get job status |
+| `/jobs` | GET | List jobs |
+
+### Job Types
+
+| Job Type | Description | Parameters |
+|----------|-------------|------------|
+| `web_scraping` | Scrape content from websites | `targets`: list of `ScrapingTarget` objects |
+| `content_processing` | Process and analyze content | `source_file`, `analysis_types` |
+| `youtube_download` | Download and transcribe YouTube videos | `video_url`, `transcribe`, `extract_audio_only` |
+| `audio_transcription` | Transcribe audio files | `media_path`, `language`, `timestamp_segments` |
+| `text_to_image` | Generate images from text | `prompt`, `negative_prompt`, etc. |
+| `image_to_image` | Generate images from text and input image | `prompt`, `image_data`, etc. |
+
+## Volume Management
+
+The pipeline uses four volumes for persistent storage:
+
+1. **content-raw**: Raw scraped content and source files
+2. **content-processed**: Processed content, analysis results, and job tracking
+3. **model-cache**: ML model weights and cache
+4. **media-cache**: Media files, images, audio, and video
+
+### Important Paths
+
+| Path | Description |
+|------|-------------|
+| `/data/raw` | Raw scraped content |
+| `/data/processed` | Processed content and analysis |
+| `/models` | ML model weights and cache |
+| `/media/audio` | Audio files |
+| `/media/video` | Video files |
+| `/media/images` | Generated images |
+| `/media/transcripts` | Transcriptions |
+
+## Scheduled Jobs
+
+The pipeline includes several scheduled jobs:
+
+1. `scheduled_scraper`: Runs every 12 hours to scrape predefined targets
+2. `scheduled_processor`: Runs every 6 hours to process new raw data
+3. `cleanup_old_jobs`: Runs every hour to clean up old job records and rate limits
+
+## Monitoring and Troubleshooting
+
+### Logs
+
+View logs for a specific function:
+
+```bash
+modal logs content-pipeline-web-scraper-scheduled-scraper
+```
+
+### Resource Usage
+
+Check resource usage:
+
+```bash
+modal stats
+```
+
+### Common Issues
+
+1. **GPU Availability**: If GPUs are unavailable, the pipeline will queue jobs until they become available. You can adjust the GPU type in the function definitions.
+
+2. **Volume Space**: Monitor volume usage and increase capacity if needed.
+
+3. **Rate Limits**: API keys have rate limits. Monitor usage and adjust limits as necessary.
+
+4. **Timeouts**: Long-running jobs may time out. Adjust timeouts in the function definitions.
+
+## Extending the Pipeline
+
+### Adding New Components
+
+1. Create a new Python file for your component
+2. Import the core modules: `from modal_core import app, VOLUME_MOUNTS, logger, Utils`
+3. Define your component as a Modal function or class
+4. Add endpoints for API access
+5. Deploy the new component: `modal deploy your_component.py`
+
+### Customizing Existing Components
+
+1. Modify the corresponding Python file
+2. Test changes locally: `modal run your_component.py`
+3. Deploy changes: `modal deploy your_component.py`
+
+### Adding New ML Models
+
+1. Modify the appropriate component (e.g., `content_processor.py`)
+2. Add model download and initialization code
+3. Add processing methods
+4. Update the API to expose the new capabilities
+5. Deploy changes
+
+## Security Considerations
+
+1. **API Keys**: Protect API keys and rotate them regularly
+2. **Rate Limiting**: Monitor and adjust rate limits
+3. **Access Control**: Restrict access to sensitive endpoints
+4. **Data Privacy**: Review data retention policies
+
+## Performance Optimization
+
+1. **GPU Selection**: Choose appropriate GPU types for workloads
+2. **Batch Processing**: Use batch processing for efficiency
+3. **Caching**: Leverage Modal volumes for caching
+4. **Concurrency**: Adjust concurrency limits for parallel processing
+
+## Backup and Recovery
+
+1. **Volume Snapshots**: Create regular snapshots of Modal volumes
+2. **Configuration Backup**: Backup configuration files and API keys
+3. **Recovery Plan**: Document recovery procedures
+
+## Updating and Maintenance
+
+1. **Dependency Updates**: Regularly update Python dependencies
+2. **Model Updates**: Keep ML models up to date
+3. **Security Patches**: Apply security patches promptly
+
+## Cost Management
+
+1. **Resource Monitoring**: Monitor resource usage with `modal stats`
+2. **Idle Timeouts**: Adjust container idle timeouts
+3. **Scheduled Jobs**: Review and optimize scheduled job frequency

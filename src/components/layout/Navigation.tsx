@@ -1,21 +1,14 @@
-// src/components/layout/Navigation.tsx
+
 'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { 
-  LayoutDashboard, 
-  FileSearch, 
-  Youtube, 
-  Image as ImageIcon,
-  Menu,
-  X,
-  Globe
-} from 'lucide-react';
+import { LayoutDashboard, FileSearch, Youtube, Image as ImageIcon, Menu, X, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/layout/ThemeToggle';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+
 
 export default function Navigation() {
   const pathname = usePathname();
@@ -36,21 +29,21 @@ export default function Navigation() {
     },
     {
       name: 'Web Scraping',
-      href: '/scrape',
+      href: '/web-scraping',
       icon: Globe,
-      active: pathname === '/scrape'
+      active: pathname === '/web-scraping'
     },
     {
       name: 'YouTube',
-      href: '/media',
+      href: '/youtube',
       icon: Youtube,
-      active: pathname === '/media'
+      active: pathname === '/youtube'
     },
     {
       name: 'Image Generation',
-      href: '/generate',
+      href: '/image-generation',
       icon: ImageIcon,
-      active: pathname === '/generate'
+      active: pathname === '/image-generation'
     }
   ];
   

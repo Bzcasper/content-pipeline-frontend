@@ -1,0 +1,323 @@
+# N8N Integration with Modal Content Pipeline
+
+This guide explains how to integrate our Modal-based content generation pipeline with n8n workflows for automation and orchestration.
+
+## Prerequisites
+
+- n8n instance running (self-hosted or cloud)
+- Modal account with API access
+- Deployed Modal content pipeline endpoints
+
+## Base Workflow Configuration
+
+Here's how to set up the base workflow in n8n that connects to all our Modal endpoints.
+
+### 1. API Authentication
+
+First, create an HTTP Request node for API authentication:
+
+1. Add an "HTTP Request" node
+2. Configure it with:
+   - Method: `POST`
+   - URL: `https://your-modal-url.modal.run/api-keys`
+   - Headers: `Content-Type: application/json`
+   - Body type: JSON
+   - Body:
+     ```json
+     {
+       "api_key": "YOUR_GENERATED_API_KEY",
+       "name": "n8n Integration",
+       "email": "your-email@example.com",
+       "permissions": ["read", "write"],
+       "rate_limit": 1000
+     }
+     ```
+3. Test and save the API key response
+
+### 2. Create Credentials
+
+Create an n8n credential for the Modal API:
+
+1. Go to Settings > Credentials
+2. Create a new "Generic API" credential
+3. Name: "Modal Pipeline API"
+4. Authentication: "Header Auth"
+5. Header Name: "X-API-Key"
+6. Header Value: Your API key from step 1
+
+### 3. Workflow Trigger
+
+Set up a trigger for your workflow. This could be:
+
+- **Webhook Trigger**: For on-demand execution
+- **Schedule Trigger**: For periodic execution
+- **Watch Folders**: For file-based triggering
+
+## Sample Workflows
+
+### YouTube Content Workflow
+
+This workflow downloads YouTube videos, transcribes them, and processes the content:
+
+1. **Trigger Node**: Webhook or schedule
+2. **HTTP Request Node**:
+   - Method: `POST`
+   - URL: `https://your-modal-url.modal.run/jobs`
+   - Authentication: Modal Pipeline API credentials
+   - Body:
+     ```json
+     {
+       "job_type": "youtube_download",
+       "parameters": {
+         "video_url": "{{$json.videoUrl}}",
+         "transcribe": true,
+         "extract_audio_only": true
+       }
+     }
+     ```
+3. **Wait Node**: 
+   - Wait for: 30 seconds (adjust based on expected processing time)
+4. **HTTP Request Node** (Check Job Status):
+   - Method: `GET`
+   - URL: `https://your-modal-url.modal.run/jobs/{{$node["HTTP Request"].json.job_id}}`
+   - Authentication: Modal Pipeline API credentials
+5. **IF Node**:
+   - Condition: `{{$json.status}}` equals `completed`
+   - If true: Continue to content processing
+   - If false: Loop back to the Wait node
+6. **HTTP Request Node** (Content Processing):
+   - Method: `POST`
+   - URL: `https://your-modal-url.modal.run/jobs`
+   - Authentication: Modal Pipeline API credentials
+   - Body:
+     ```json
+     {
+       "job_type": "content_processing",
+       "parameters": {
+         "source_file": "{{$json.results.result.transcription.transcript_path.split('/').pop()}}",
+         "analysis_types": ["summarization", "sentiment", "embedding"]
+       }
+     }
+     ```
+7. **Wait Node**:
+   - Wait for: 15 seconds
+8. **HTTP Request Node** (Get Analysis Results):
+   - Method: `GET`
+   - URL: `https://your-modal-url.modal.run/jobs/{{$node["HTTP Request1"].json.job_id}}`
+   - Authentication: Modal Pipeline API credentials
+9. **Send Email Node** (if desired):
+   - Send analysis results via email
+
+### Web Scraping and Image Generation Workflow
+
+This workflow scrapes content from websites and generates images based on the scraped content:
+
+1. **Trigger Node**: Schedule or webhook
+2. **HTTP Request Node** (Web Scraping):
+   - Method: `POST`
+   - URL: `https://your-modal-url.modal.run/jobs`
+   - Authentication: Modal Pipeline API credentials
+   - Body:
+     ```json
+     {
+       "job_type": "web_scraping",
+       "parameters": {
+         "targets": [
+           {
+             "url": "{{$json.url}}",
+             "selectors": {
+               "title": "h1",
+               "content": "article",
+               "date": "time"
+             }
+           }
+         ]
+       }
+     }
+     ```
+3. **Wait Node**: 
+   - Wait for: 15 seconds
+4. **HTTP Request Node** (Check Job Status):
+   - Method: `GET`
+   - URL: `https://your-modal-url.modal.run/jobs/{{$node["HTTP Request"].json.job_id}}`
+   - Authentication: Modal Pipeline API credentials
+5. **Function Node**:
+   - Process scraped content to extract useful information for images
+   - Code:
+     ```javascript
+     const results = $input.json.results;
+     const content = results[0].data.content;
+     
+     // Extract key phrases or ideas from content
+     const ideas = content.split('.').filter(s => s.length > 30).slice(0, 3);
+     
+     // Create prompts for image generation
+     const prompts = ideas.map(idea => `High quality digital art of ${idea.trim()}`);
+     
+     return { prompts };
+     ```
+6. **Split In Batches Node**:
+   - Input field: `prompts`
+   - Batch Size: 1
+7. **HTTP Request Node** (Generate Images):
+   - Method: `POST`
+   - URL: `https://your-modal-url.modal.run/jobs`
+   - Authentication: Modal Pipeline API credentials
+   - Body:
+     ```json
+     {
+       "job_type": "text_to_image",
+       "parameters": {
+         "prompt": "{{$json}}",
+         "width": 512,
+         "height": 512,
+         "num_inference_steps": 50,
+         "guidance_scale": 7.5
+       }
+     }
+     ```
+8. **Wait Node**: 
+   - Wait for: 30 seconds
+9. **HTTP Request Node** (Get Image):
+   - Method: `GET`
+   - URL: `https://your-modal-url.modal.run/jobs/{{$node["HTTP Request1"].json.job_id}}`
+   - Authentication: Modal Pipeline API credentials
+10. **Function Node**:
+    - Extract image data and prepare for saving/sending
+11. **Write Binary File Node**:
+    - File name: `{{$json.results.result.timestamp}}.png`
+    - Data: `{{$json.results.result.image_data}}`
+    - Property: Base64 image data
+    - Convert from: Base64
+
+## Advanced n8n Features
+
+### Error Handling
+
+Add error handling to your workflow:
+
+1. **Error Trigger** nodes that capture and respond to errors
+2. **IF** nodes to check job status and retry if needed
+3. **Function** nodes to log errors and send notifications
+
+### Conditional Logic
+
+Use n8n's conditional execution features:
+
+1. **IF** nodes to branch workflow based on content type or analysis results
+2. **Switch** nodes to route to different processing paths
+
+### Data Transformation
+
+Use these nodes to transform data between steps:
+
+1. **Function** nodes for JavaScript data manipulation
+2. **Set** nodes to modify, restructure or filter data
+3. **Move Binary Data** nodes to handle file data
+
+## Example JSON Node Configuration
+
+Below is the JSON configuration for a YouTube processing node in n8n:
+
+```json
+{
+  "parameters": {
+    "method": "POST",
+    "url": "https://your-modal-url.modal.run/jobs",
+    "authentication": "predefinedCredentialType",
+    "credential": "Modal Pipeline API",
+    "sendHeaders": true,
+    "headerParameters": {
+      "parameters": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ]
+    },
+    "sendBody": true,
+    "bodyParameters": {
+      "parameters": [
+        {
+          "name": "job_type",
+          "value": "youtube_download"
+        },
+        {
+          "name": "parameters",
+          "value": {
+            "video_url": "={{$json.videoUrl}}",
+            "transcribe": true,
+            "extract_audio_only": true
+          }
+        }
+      ]
+    },
+    "options": {}
+  },
+  "name": "Process YouTube Video",
+  "type": "n8n-nodes-base.httpRequest",
+  "typeVersion": 1,
+  "position": [
+    880,
+    300
+  ]
+}
+```
+
+## Webhook Integration
+
+To receive callbacks from Modal:
+
+1. Create a **Webhook Trigger** node in n8n
+2. Copy the webhook URL
+3. Use this URL as the `callback_url` parameter in your Modal job requests
+4. The webhook will trigger when the Modal job completes
+
+## Monitoring and Notifications
+
+Set up monitoring in your workflow:
+
+1. **Slack** or **Email** nodes to send notifications on job completion or failure
+2. **Function** nodes to log execution details
+3. Conditional nodes to alert on specific outcomes (e.g., sentiment analysis results)
+
+## Complete Workflow Examples
+
+### Content Curation Workflow
+
+This more advanced workflow demonstrates a complete content curation pipeline:
+
+1. Scrape content from multiple sources
+2. Download and transcribe relevant videos
+3. Analyze and categorize all content
+4. Generate images and summaries
+5. Compile into a newsletter or report
+6. Distribute via email or publish to website
+
+[Link to download n8n workflow JSON file]
+
+### Social Media Automation
+
+This workflow automates social media content creation:
+
+1. Monitor trending topics with the **HTTP Request** node
+2. Generate relevant content with Modal's content processing
+3. Create images with text-to-image generation
+4. Schedule and post to social media platforms using n8n's social media nodes
+
+[Link to download n8n workflow JSON file]
+
+## Troubleshooting
+
+Common issues and solutions:
+
+1. **Authentication failures**: Verify API key is correctly set in credentials
+2. **Timeout errors**: Increase wait times for long-running processes
+3. **Missing data**: Use function nodes to validate data between steps
+4. **Rate limiting**: Add delays or implement backoff strategies in your workflow
+
+## Resources
+
+- [n8n documentation](https://docs.n8n.io/)
+- [Modal documentation](https://modal.com/docs/)
+- [JSON examples for all Modal endpoints](https://your-modal-url.modal.run/docs)

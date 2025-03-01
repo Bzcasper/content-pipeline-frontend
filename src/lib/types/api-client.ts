@@ -1,11 +1,7 @@
-export interface JobStatusResponse {
-  id: string;
-  status: string;
-  job_type: string;
-  created_at: string;
-  updated_at: string;
-  result?: any;
-  error?: string;
+interface GenerateImageParams {
+  prompt: string;
+  num_images?: number;
+  size?: string;
 }
 
 import { JobStatusResponse } from "@/lib/types";
@@ -41,7 +37,7 @@ export const apiClient = {
   async listJobs(): Promise<{ jobs: JobStatusResponse[] }> {
     return request<{ jobs: JobStatusResponse[] }>('/jobs');
   },
-  async scrapeWebsites(targets: any): Promise<{ job_id: string }> {
+  async scrapeWebsites(targets: string[]): Promise<{ job_id: string }> {
     return request<{ job_id: string }>('/jobs', {
       method: 'POST',
       body: JSON.stringify({
@@ -59,7 +55,7 @@ export const apiClient = {
       }),
     });
   },
-  async generateImageFromText(params: any): Promise<{ job_id: string }> {
+  async generateImageFromText(params: GenerateImageParams): Promise<{ job_id: string }> {
     return request<{ job_id: string }>('/jobs', {
       method: 'POST',
       body: JSON.stringify({
